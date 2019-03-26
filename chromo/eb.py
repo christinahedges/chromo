@@ -26,4 +26,28 @@ def analyze(tpf, period, t0, aper=None):
 
     if aper is None:
         aper = np.ones(flux.shape[1:], bool)
+
     true = tpf.to_lightcurve(aperture_mask=aper).normalize()
+
+
+
+    # Correct background
+    flux = np.copy(tpf.flux)
+    thumb = np.nanpercentile(flux, 95, axis=0)
+    mask = thumb > np.nanpercentile(thumb, 30)
+
+    # Make sure to throw away nans
+    mask[~np.isfinite(thumb)] = True
+
+    # Build a background estimate using astropy sigma clipping
+    mean, med, sigma = np.asarray([sigma_clipped_stats(f, mask=mask) for f in flux]).T
+
+    # Remove the median background
+    flux = tpf.flux - np.atleast_3d(med).transpose([1, 2, 0])
+
+    # HAVE to add the minimum back in, otherwise some flux values are negative!
+    flux -= np.min(flux)
+
+    flux_err = tpf.flux_err
+
+    return flux
