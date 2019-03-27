@@ -1,2 +1,11 @@
 data
 chromo.egg-info
+*.mp4
+*.csv
+*.fits
+*.zip
+__pycache__
+.ipynb_checkpoints
+chromo/__pycache__
+notebooks/.ipynb_checkpoints/
+*.pyc
