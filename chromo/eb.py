@@ -57,8 +57,16 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
     func = interp1d(x_fold_b[np.argsort(x_fold_b)], true_flux_b[np.argsort(x_fold_b)],
                     kind='cubic', fill_value='extrapolate')
     eb_model = func(x_fold)
-    plt.plot(true.time, true.flux)
-    plt.plot(true.time, eb_model)
+
+    # Make it really flat.
+    true /= poly_detrend(true, eb_model).flux
+    true_flux_b = np.asarray([np.median(true.flux[ind]) for ind in inds])
+    true_flux_b /= np.nanmedian(true.flux)
+
+    true.fold(period, t0).scatter()
+
+#    plt.plot(true.time, true.flux)
+#    plt.plot(true.time, eb_model)
 #    fig, ax = plt.subplots()
 #    ax.plot(x_fold[np.argsort(x_fold)], true.flux[np.argsort(x_fold)])
 #    ax.axhline(true_primary_depth, color='C1', ls='--', label='Secondary Depth')
@@ -108,14 +116,15 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
             model[:, idx, jdx] = corr_model_lc
 
 
+
 #    primary_depth[saturated] = np.nan
 #    secondary_depth[saturated] = np.nan
     aper &= corr > 0
+    hard_aper = (corr > 0.2) & (np.nanmax(tpf.flux, axis=0) > 200)
 #    aper = (np.nan_to_num(primary_depth) < 0.95) & ~saturated
 #    plt.figure()
 #    plt.plot(data[:, aper], c='k', alpha=0.01)
 #    return
-
     data_b = np.asarray([np.median(data[ind, :, :], axis=0) for ind in inds])
     model_b = np.asarray([np.median(model[ind, :, :], axis=0) for ind in inds])
 
@@ -123,16 +132,19 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
     resids -= (np.copy(model_b) -  np.atleast_3d(np.median(model, axis=0)).transpose([2, 0, 1]))
 
 
+    log.info('Plotting Crobat')
+
+    norm_depth_ratio = secondary_depth/primary_depth - true_secondary_depth/true_primary_depth
     cmap = plt.get_cmap('RdBu')
-    norm = MidPointNorm(midpoint=0, vmin=np.min([0, np.nanmin(resids[:, aper])]), vmax=np.nanmax([0, np.nanmax(resids[:, aper])]))
+    norm = MidPointNorm(midpoint=0, vmin=np.min([0, np.nanmin(norm_depth_ratio[aper & ~saturated])]), vmax=np.nanmax([0, np.nanmax(norm_depth_ratio[aper & ~saturated])]))
     cmap.set_bad('lightgrey', 1)
 
-    # Matplot lib stuff
-    fig, ax = plt.subplots(figsize=(17, 8))
-    for l, n in zip(deepcopy(resids[:, aper].T), corr[aper]):
-        ax.plot(x_fold_b, l, color=cmap(norm(n)), zorder=-n)
-        #ax.plot(x_fold_b, (true_flux_b) * corr - corr + 1, color='k', zorder=n)
 
+    fig, ax = plt.subplots(figsize=(15, 6))
+    for l, n in zip(deepcopy(resids[:, hard_aper & ~saturated].T), norm_depth_ratio[hard_aper & ~saturated]):
+        ax.plot(x_fold_b, l, color=cmap(norm(n)), zorder=n)
+        #ax.plot(x_fold_b, (true_flux_b) * corr - corr + 1, color='k', zorder=n)
+    ax.set_xlabel('Phase')
     #Horrible Colorbar
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
@@ -142,17 +154,16 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
     ax.axvline(0, ls='--', color='k')
 
 
-
     ph, fl = x_fold_b[np.argsort(x_fold_b)], true_flux_b[np.argsort(x_fold_b)]
 
     log.info('\tBuilding Normalized Flux Animation')
-    color_aper =  aper & ~saturated
+    color_aper =  hard_aper & ~saturated
     fmin, fmax = np.nanpercentile(model_b[:, color_aper], 1), np.nanmax([1, np.nanpercentile(model_b[:, color_aper], 1)])
     movie(data_b, ph, fl, cmap='viridis', vmin=fmin, vmax=fmax, out='{}.mp4'.format(name.replace(' ', '')),
                        title='Normalized Data', cbar_label='Normalized Flux')
 
     cmap = plt.get_cmap('PuOr_r')
-    color_aper = ((model_b[nb//2] < 0.99) & (model_b[nb//2] > fmin*0.5)) & ~saturated
+    color_aper = hard_aper & ~saturated
     vmin, vmax = np.min([0, np.nanpercentile(resids[:, color_aper], 1)]), np.nanmax([0, np.nanpercentile(resids[:, color_aper], 99)])
 
     vmax = np.max([np.abs(vmin), vmax])
