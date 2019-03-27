@@ -106,16 +106,20 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
     true_flux_b /= np.nanmedian(true_flux)
 
     resids = data_b - np.atleast_3d(np.median(data, axis=0)).transpose([2, 0, 1])
-    resids -= (model_b -  np.atleast_3d(np.median(model, axis=0)).transpose([2, 0, 1]))
+    resids -= (np.copy(model_b) -  np.atleast_3d(np.median(model, axis=0)).transpose([2, 0, 1]))
 
     ph, fl = x_fold_b[np.argsort(x_fold_b)], true_flux_b[np.argsort(x_fold_b)]
 
     log.info('\tBuilding Normalized Flux Animation')
     color_aper = (model_b[nb//2] < 0.99) & ~saturated
     fmin, fmax = np.nanpercentile(model_b[:, color_aper], 1), np.nanmax([1, np.nanpercentile(model_b[:, color_aper], 1)])
+    print(fmin, fmax)
+    plt.imshow(color_aper)
+    return
     movie(data_b, ph, fl, cmap='viridis', vmin=fmin, vmax=fmax, out='{}.mp4'.format(name.replace(' ', '')),
                        title='Normalized Data', cbar_label='Normalized Flux')
 
+    return
     cmap = plt.get_cmap('PuOr_r')
     color_aper = ((model_b[nb//2] < 0.99) & (model_b[nb//2] > fmin*0.5)) & ~saturated
     vmin, vmax = np.min([0, np.nanpercentile(resids[:, color_aper], 1)]), np.nanmax([0, np.nanpercentile(resids[:, color_aper], 99)])
