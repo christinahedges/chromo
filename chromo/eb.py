@@ -63,10 +63,12 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
 
     primary_depth = np.zeros(flux.shape[1:])
     secondary_depth = np.zeros(flux.shape[1:])
+    corr = np.zeros(flux.shape[1:])
 
     primary_depth_err = np.zeros(flux.shape[1:])
     secondary_depth_err = np.zeros(flux.shape[1:])
 
+    all_aper = np.ones(flux.shape[1:], bool)
 
     for jdx in tqdm(range(flux.shape[2]), desc='Calculating Pixel Light Curves'):
         for idx in range(flux.shape[1]):
@@ -86,17 +88,21 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
 
             data[:, idx, jdx] = l1.flux
 
-            p = 1 - np.nanmedian(l1.normalize().flux[np.abs(x_fold) < 0.02])
+            p = 1 - np.nanmedian(l1.flux[np.abs(x_fold) < 0.02])
             tp = 1 - np.nanmedian(true_flux[np.abs(x_fold) < 0.02])
-            corr = (p/tp)
-            corr_model_lc =  (true_flux) * corr - corr + 1
+
+            corr[idx, jdx] = (p/tp)
+            corr_model_lc =  (true_flux) * corr[idx, jdx] - corr[idx, jdx] + 1
             model[:, idx, jdx] = corr_model_lc
 
 
     primary_depth[saturated] = np.nan
     secondary_depth[saturated] = np.nan
+    aper &= corr > 0
 #    aper = (np.nan_to_num(primary_depth) < 0.95) & ~saturated
-
+#    plt.figure()
+#    plt.plot(data[:, aper], c='k', alpha=0.01)
+#    return
 
     inds = np.array_split(np.argsort(x_fold), np.linspace(0, len(x_fold), nb + 1, dtype=int))[1:-1]
     x_fold_b = np.asarray([np.median(x_fold[ind]) for ind in inds])
@@ -105,21 +111,17 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
     true_flux_b = np.asarray([np.median(true.flux[ind]) for ind in inds])
     true_flux_b /= np.nanmedian(true_flux)
 
-    resids = data_b - np.atleast_3d(np.median(data, axis=0)).transpose([2, 0, 1])
+    resids = np.copy(data_b) - np.atleast_3d(np.median(data, axis=0)).transpose([2, 0, 1])
     resids -= (np.copy(model_b) -  np.atleast_3d(np.median(model, axis=0)).transpose([2, 0, 1]))
 
     ph, fl = x_fold_b[np.argsort(x_fold_b)], true_flux_b[np.argsort(x_fold_b)]
 
     log.info('\tBuilding Normalized Flux Animation')
-    color_aper = (model_b[nb//2] < 0.99) & ~saturated
+    color_aper =  aper & ~saturated
     fmin, fmax = np.nanpercentile(model_b[:, color_aper], 1), np.nanmax([1, np.nanpercentile(model_b[:, color_aper], 1)])
-    print(fmin, fmax)
-    plt.imshow(color_aper)
-    return
     movie(data_b, ph, fl, cmap='viridis', vmin=fmin, vmax=fmax, out='{}.mp4'.format(name.replace(' ', '')),
                        title='Normalized Data', cbar_label='Normalized Flux')
 
-    return
     cmap = plt.get_cmap('PuOr_r')
     color_aper = ((model_b[nb//2] < 0.99) & (model_b[nb//2] > fmin*0.5)) & ~saturated
     vmin, vmax = np.min([0, np.nanpercentile(resids[:, color_aper], 1)]), np.nanmax([0, np.nanpercentile(resids[:, color_aper], 99)])
