@@ -102,10 +102,11 @@ def background_correct(raw_tpf):
     os.remove('hack.fits')
     return tpf
 
-def poly_detrend(lc, npoly=3, sigma=3):
+def poly_detrend(lc, eb_model, npoly=3, sigma=3):
     ''' Detrend a light curve with a simple third order polynomial
     '''
     clc = lc.copy()
+    clc /= eb_model
     split = np.where(np.diff(clc.time) > 0.5)[0][0]+1
     f = clc[:split].remove_outliers(sigma)
     corr = lk.LightCurve(clc[:split].time, np.polyval(np.polyfit(f.time, f.flux, npoly), clc[:split].time))
@@ -113,7 +114,6 @@ def poly_detrend(lc, npoly=3, sigma=3):
     f = clc[split:].remove_outliers(sigma)
     corr = corr.append(lk.LightCurve(clc[split:].time, np.polyval(np.polyfit(f.time, f.flux, npoly), clc[split:].time)))
     return corr
-
 
 
 

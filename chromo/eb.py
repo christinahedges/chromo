@@ -10,6 +10,8 @@ from astropy.stats import sigma_clipped_stats, sigma_clip
 from astropy.convolution import convolve, Box1DKernel, Box2DKernel, Gaussian2DKernel
 from astropy.io import fits
 
+from scipy.interpolate import interp1d
+
 import lightkurve as lk
 
 from .utils import *
@@ -47,6 +49,16 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
     true_primary_depth = np.nanmedian(true.flux[np.abs(x_fold) < 0.02])
     true_secondary_depth = np.nanmedian(true.flux[np.abs(x_fold) > 0.48])
 
+    inds = np.array_split(np.argsort(x_fold), np.linspace(0, len(x_fold), nb + 1, dtype=int))[1:-1]
+    x_fold_b = np.asarray([np.median(x_fold[ind]) for ind in inds])
+    true_flux_b = np.asarray([np.median(true.flux[ind]) for ind in inds])
+    true_flux_b /= np.nanmedian(true.flux)
+
+    func = interp1d(x_fold_b[np.argsort(x_fold_b)], true_flux_b[np.argsort(x_fold_b)],
+                    kind='cubic', fill_value='extrapolate')
+    eb_model = func(x_fold)
+    plt.plot(true.time, true.flux)
+    plt.plot(true.time, eb_model)
 #    fig, ax = plt.subplots()
 #    ax.plot(x_fold[np.argsort(x_fold)], true.flux[np.argsort(x_fold)])
 #    ax.axhline(true_primary_depth, color='C1', ls='--', label='Secondary Depth')
@@ -75,7 +87,7 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
             # BUILD a lk object
             l1 = lk.LightCurve(time, flux[:, idx, jdx], flux_err=flux_err[:, idx, jdx])
             # Detrend long term
-            l1 /= poly_detrend(l1).flux
+            l1 /= poly_detrend(l1, eb_model).flux
             l1 = l1.normalize()
             primary_depth[idx, jdx] = np.nanmedian(l1.flux[np.abs(x_fold) < 0.02])
             primary_depth_err[idx, jdx] = np.nanstd(l1.flux[np.abs(x_fold) < 0.02])
@@ -96,23 +108,40 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
             model[:, idx, jdx] = corr_model_lc
 
 
-    primary_depth[saturated] = np.nan
-    secondary_depth[saturated] = np.nan
+#    primary_depth[saturated] = np.nan
+#    secondary_depth[saturated] = np.nan
     aper &= corr > 0
 #    aper = (np.nan_to_num(primary_depth) < 0.95) & ~saturated
 #    plt.figure()
 #    plt.plot(data[:, aper], c='k', alpha=0.01)
 #    return
 
-    inds = np.array_split(np.argsort(x_fold), np.linspace(0, len(x_fold), nb + 1, dtype=int))[1:-1]
-    x_fold_b = np.asarray([np.median(x_fold[ind]) for ind in inds])
     data_b = np.asarray([np.median(data[ind, :, :], axis=0) for ind in inds])
     model_b = np.asarray([np.median(model[ind, :, :], axis=0) for ind in inds])
-    true_flux_b = np.asarray([np.median(true.flux[ind]) for ind in inds])
-    true_flux_b /= np.nanmedian(true_flux)
 
     resids = np.copy(data_b) - np.atleast_3d(np.median(data, axis=0)).transpose([2, 0, 1])
     resids -= (np.copy(model_b) -  np.atleast_3d(np.median(model, axis=0)).transpose([2, 0, 1]))
+
+
+    cmap = plt.get_cmap('RdBu')
+    norm = MidPointNorm(midpoint=0, vmin=np.min([0, np.nanmin(resids[:, aper])]), vmax=np.nanmax([0, np.nanmax(resids[:, aper])]))
+    cmap.set_bad('lightgrey', 1)
+
+    # Matplot lib stuff
+    fig, ax = plt.subplots(figsize=(17, 8))
+    for l, n in zip(deepcopy(resids[:, aper].T), corr[aper]):
+        ax.plot(x_fold_b, l, color=cmap(norm(n)), zorder=-n)
+        #ax.plot(x_fold_b, (true_flux_b) * corr - corr + 1, color='k', zorder=n)
+
+    #Horrible Colorbar
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    cbar = plt.colorbar(sm, ax=ax)
+    #cbar.set_label('Measured Secondary Depth/\nTrue Secondary Depth')
+    ax.set_ylabel('Pixel Light Curves')
+    ax.axvline(0, ls='--', color='k')
+
+
 
     ph, fl = x_fold_b[np.argsort(x_fold_b)], true_flux_b[np.argsort(x_fold_b)]
 
@@ -135,7 +164,7 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
 
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
-        movie(resids/np.atleast_3d(aper & ~saturated).transpose([2, 0, 1]), ph, fl,
+        movie(resids/np.atleast_3d(aper).transpose([2, 0, 1]), ph, fl,
                            cmap=cmap, norm=norm, vmin=vmin, vmax=vmax, out='{}_resids.mp4'.format(name.replace(' ', '')),
                            title='Residuals', cbar_label='Resiudal')
 
