@@ -10,6 +10,7 @@ from astropy.stats import sigma_clipped_stats, sigma_clip
 from astropy.convolution import convolve, Box1DKernel, Box2DKernel, Gaussian2DKernel
 from astropy.io import fits
 
+from scipy.stats import pearsonr
 from scipy.interpolate import interp1d
 
 import lightkurve as lk
@@ -116,15 +117,16 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
             model[:, idx, jdx] = corr_model_lc
 
 
+    correlation, score = np.zeros(data.shape[1:]), np.zeros(data.shape[1:])
+    for idx in range(data.shape[1]):
+        for jdx in range(data.shape[2]):
+            correlation[idx, jdx], score[idx, jdx] = pearsonr(data[:, idx, jdx], true_flux)
 
-#    primary_depth[saturated] = np.nan
-#    secondary_depth[saturated] = np.nan
-    aper &= corr > 0
-    hard_aper = (corr > 0.2) & (np.nanmax(tpf.flux, axis=0) > 200)
-#    aper = (np.nan_to_num(primary_depth) < 0.95) & ~saturated
-#    plt.figure()
-#    plt.plot(data[:, aper], c='k', alpha=0.01)
-#    return
+
+
+
+    aper &= np.log10(score) < -30
+
     data_b = np.asarray([np.median(data[ind, :, :], axis=0) for ind in inds])
     model_b = np.asarray([np.median(model[ind, :, :], axis=0) for ind in inds])
 
@@ -133,38 +135,18 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
 
 
     log.info('Plotting Crobat')
+    plot_crobat(x_fold_b, resids, secondary_mask=np.abs(x_fold_b) > 0.48, aper=aper & ~saturated, name=name)
 
-    norm_depth_ratio = secondary_depth/primary_depth - true_secondary_depth/true_primary_depth
-    cmap = plt.get_cmap('RdBu')
-    norm = MidPointNorm(midpoint=0, vmin=np.min([0, np.nanmin(norm_depth_ratio[aper & ~saturated])]), vmax=np.nanmax([0, np.nanmax(norm_depth_ratio[aper & ~saturated])]))
-    cmap.set_bad('lightgrey', 1)
-
-
-    fig, ax = plt.subplots(figsize=(15, 6))
-    for l, n in zip(deepcopy(resids[:, hard_aper & ~saturated].T), norm_depth_ratio[hard_aper & ~saturated]):
-        ax.plot(x_fold_b, l, color=cmap(norm(n)), zorder=n)
-        #ax.plot(x_fold_b, (true_flux_b) * corr - corr + 1, color='k', zorder=n)
-    ax.set_xlabel('Phase')
-    #Horrible Colorbar
-    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array([])
-    cbar = plt.colorbar(sm, ax=ax)
-    #cbar.set_label('Measured Secondary Depth/\nTrue Secondary Depth')
-    ax.set_ylabel('Pixel Light Curves')
-    ax.axvline(0, ls='--', color='k')
-
-
+    return data, model
     ph, fl = x_fold_b[np.argsort(x_fold_b)], true_flux_b[np.argsort(x_fold_b)]
 
     log.info('\tBuilding Normalized Flux Animation')
-    color_aper =  hard_aper & ~saturated
-    fmin, fmax = np.nanpercentile(model_b[:, color_aper], 1), np.nanmax([1, np.nanpercentile(model_b[:, color_aper], 1)])
-    movie(data_b, ph, fl, cmap='viridis', vmin=fmin, vmax=fmax, out='{}.mp4'.format(name.replace(' ', '')),
+    fmin, fmax = np.nanpercentile(model_b[:, aper & ~saturated], 1), np.nanmax([1, np.nanpercentile(model_b[:, aper & ~saturated], 1)])
+    movie(data_b, ph, fl, cmap='viridis', vmin=fmin, vmax=fmax, out='{}_{}.mp4'.format(name.replace(' ', ''), 'sector{}'.format(tpf.sector)),
                        title='Normalized Data', cbar_label='Normalized Flux')
 
     cmap = plt.get_cmap('PuOr_r')
-    color_aper = hard_aper & ~saturated
-    vmin, vmax = np.min([0, np.nanpercentile(resids[:, color_aper], 1)]), np.nanmax([0, np.nanpercentile(resids[:, color_aper], 99)])
+    vmin, vmax = np.min([0, np.nanpercentile(resids[:, aper & ~saturated], 1)]), np.nanmax([0, np.nanpercentile(resids[:, aper & ~saturated], 99)])
 
     vmax = np.max([np.abs(vmin), vmax])
     vmin = -vmax
@@ -176,10 +158,10 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
         movie(resids/np.atleast_3d(aper).transpose([2, 0, 1]), ph, fl,
-                           cmap=cmap, norm=norm, vmin=vmin, vmax=vmax, out='{}_resids.mp4'.format(name.replace(' ', '')),
+                           cmap=cmap, norm=norm, vmin=vmin, vmax=vmax, out='{}_{}_resids.mp4'.format(name.replace(' ', ''), 'sector{}'.format(tpf.sector)),
                            title='Residuals', cbar_label='Resiudal')
 
-    return
+    return data, model
 
     plt.figure()
     plt.plot(x_fold, data[:, aper], 'k.', alpha=0.01);
