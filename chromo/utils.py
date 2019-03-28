@@ -82,7 +82,9 @@ def _estimate_background(tpf):
     # Correct background
     flux = np.copy(tpf.flux)
     thumb = np.nanpercentile(flux, 95, axis=0)
-    mask = thumb > np.nanpercentile(thumb, 30)
+    thumb[thumb > 1e3] = np.nan
+    mask = thumb > np.nanpercentile(thumb, 5)
+    mask |= ~np.isfinite(thumb)
 
     # Make sure to throw away nans
     mask[~np.isfinite(thumb)] = True
@@ -95,25 +97,31 @@ def _estimate_background(tpf):
 def background_correct(raw_tpf):
     bkg = _estimate_background(raw_tpf)
     hdu = deepcopy(raw_tpf.hdu)
-    hdu[1].data['FLUX'] -= np.atleast_3d(bkg).transpose([1, 2, 0])
-    hdu[1].data['FLUX'] -= np.min(hdu[1].data['FLUX'])
+    hdu[1].data['FLUX'][raw_tpf.quality_mask] -= np.atleast_3d(bkg).transpose([1, 2, 0])
+    hdu[1].data['FLUX'][raw_tpf.quality_mask] -= np.min(hdu[1].data['FLUX'])
     fits.HDUList(hdus=list(hdu)).writeto('hack.fits', overwrite=True)
-    tpf = lk.TessTargetPixelFile('hack.fits')
+    tpf = lk.TessTargetPixelFile('hack.fits', quality_bitmask=raw_tpf.quality_bitmask)
     os.remove('hack.fits')
     return tpf
 
-def poly_detrend(lc, npoly=3, sigma=3):
+def poly_detrend(lc, eb_model, npoly=3, sigma=3):
     ''' Detrend a light curve with a simple third order polynomial
     '''
     clc = lc.copy()
-    split = np.where(np.diff(clc.time) > 0.5)[0][0]+1
-    f = clc[:split].remove_outliers(sigma)
-    corr = lk.LightCurve(clc[:split].time, np.polyval(np.polyfit(f.time, f.flux, npoly), clc[:split].time))
+    clc /= eb_model
 
-    f = clc[split:].remove_outliers(sigma)
-    corr = corr.append(lk.LightCurve(clc[split:].time, np.polyval(np.polyfit(f.time, f.flux, npoly), clc[split:].time)))
+    if np.any(np.diff(clc.time) > 0.5):
+        split = np.where(np.diff(clc.time) > 0.5)[0][0]+1
+        f = clc[:split].remove_outliers(sigma)
+        corr = lk.LightCurve(clc[:split].time, np.polyval(np.polyfit(f.time, f.flux, npoly), clc[:split].time))
+
+        f = clc[split:].remove_outliers(sigma)
+        corr = corr.append(lk.LightCurve(clc[split:].time, np.polyval(np.polyfit(f.time, f.flux, npoly), clc[split:].time)))
+    else:
+        f = clc.remove_outliers(sigma)
+        corr = lk.LightCurve(clc.time, np.polyval(np.polyfit(f.time, f.flux, npoly), clc.time))
+
     return corr
-
 
 
 
@@ -171,3 +179,53 @@ def movie(dat, phase, flux, title='', out='out.mp4', scale='linear', cbar_label=
 
     anim = animation.FuncAnimation(fig, animate, frames=len(data), interval=30)
     anim.save(out, dpi=150)
+
+def plot_crobat(x_fold_b, resids, secondary_mask, aper, **kwargs):
+    ''' Plot a nice crobat plot
+    '''
+    secondary_depth_resid = np.median(resids[secondary_mask], axis=0)
+
+    vmin = np.min([0, np.nanmin(secondary_depth_resid[aper])])
+    vmax = np.nanmax([0, np.nanmax(secondary_depth_resid[aper])])
+
+    cmap = plt.get_cmap(kwargs.pop('cmap', 'RdBu'))
+    norm = MidPointNorm(midpoint=0,
+                        vmin=vmin,
+                        vmax=vmax)
+    cmap.set_bad('lightgrey', 1)
+    dt = (vmax - vmin)/8
+    ticks = np.append(np.round(np.arange(vmin, 0, dt), 3)[:-1], np.round(np.arange(0, vmax, dt), 3))
+    ticks = np.unique(ticks)
+
+    fig = plt.figure(figsize=(14, 3))
+    ax = plt.subplot2grid((1, 4), (0, 0), colspan=3, fig=fig)
+    ax.set_title('Residuals as a Function of Time')
+    for idx, l, n in zip(range(aper.sum()), deepcopy(resids[:, aper].T), secondary_depth_resid[aper]):
+        if idx == 0:
+            ax.plot(x_fold_b, l, color=cmap(norm(n)), zorder=n, label=kwargs.pop('name', ''))
+        else:
+            ax.plot(x_fold_b, l, color=cmap(norm(n)), zorder=n)
+        #ax.plot(x_fold_b, (true_flux_b) * corr - corr + 1, color='k', zorder=n)
+    ax.set_xlabel('Phase')
+    ax.legend()
+    #Horrible Colorbar
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+
+    #cbar.set_label('Measured Secondary Depth/\nTrue Secondary Depth')
+    ax.set_ylabel('Pixel Light Curves')
+#    ax.axvline(0, ls='--', color='k')
+
+    ax = plt.subplot2grid((1, 4), (0, 3), colspan=1, fig=fig)
+    im = ax.imshow(secondary_depth_resid/(aper), cmap=cmap, norm=norm)
+
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="5%", pad=0.05)
+    cbar = plt.colorbar(im, cax=cax, ticks=ticks)
+    cbar.ax.tick_params(labelsize=10)
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_title('Residuals During Secondary Eclipse', fontsize=15)
+
+    return fig
