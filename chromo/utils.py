@@ -217,6 +217,44 @@ def plot_crobat(x_fold_b, resids, secondary_mask, aper, **kwargs):
 #    ax.axvline(0, ls='--', color='k')
 
     ax = plt.subplot2grid((1, 4), (0, 3), colspan=1, fig=fig)
+    # im = ax.imshow(secondary_depth_resid, cmap=cmap, norm=norm)
+    im = ax.imshow(secondary_depth_resid/(aper), cmap=cmap, norm=norm)
+
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="5%", pad=0.05)
+    cbar = plt.colorbar(im, cax=cax, ticks=ticks)
+    cbar.ax.tick_params(labelsize=10)
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_title('Residuals During Secondary Eclipse', fontsize=15)
+
+    return fig
+
+
+def plot_cromoth(x_fold_b, resids, secondary_mask, aper, **kwargs):
+    ''' Plot a nice cromoth
+    '''
+    secondary_depth_resid = np.median(resids[secondary_mask], axis=0)
+
+    vmin = np.min([0, np.nanmin(secondary_depth_resid[aper])])
+    vmax = np.nanmax([0, np.nanmax(secondary_depth_resid[aper])])
+
+    cmap = plt.get_cmap(kwargs.pop('cmap', 'RdBu'))
+    norm = MidPointNorm(midpoint=0,
+                        vmin=vmin,
+                        vmax=vmax)
+    cmap.set_bad('lightgrey', 1)
+    dt = (vmax - vmin)/8
+    ticks = np.append(np.round(np.arange(vmin, 0, dt), 3)[:-1], np.round(np.arange(0, vmax, dt), 3))
+    ticks = np.unique(ticks)
+
+    fig = plt.figure(figsize=(6, 5))
+
+#    ax.axvline(0, ls='--', color='k')
+
+    ax = plt.subplot()
+    # im = ax.imshow(secondary_depth_resid, cmap=cmap, norm=norm)
     im = ax.imshow(secondary_depth_resid/(aper), cmap=cmap, norm=norm)
 
     divider = make_axes_locatable(ax)

@@ -125,7 +125,7 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
 
 
 
-    aper &= np.log10(score) < -30
+    aper &= np.log10(score) < -10
 
     data_b = np.asarray([np.median(data[ind, :, :], axis=0) for ind in inds])
     model_b = np.asarray([np.median(model[ind, :, :], axis=0) for ind in inds])
@@ -136,6 +136,10 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
 
     log.info('Plotting Crobat')
     plot_crobat(x_fold_b, resids, secondary_mask=np.abs(x_fold_b) > 0.48, aper=aper & ~saturated, name=name)
+
+    log.info('Plotting Cromoth')
+    fig = plot_cromoth(x_fold_b, resids, secondary_mask=np.abs(x_fold_b) > 0.48, aper=aper & ~saturated, name=name)
+    fig.savefig('{}_{}.png'.format(name.replace(' ', ''), 'sector{}'.format(tpf.sector)), dpi=200, bbox_inches='tight')
 
     return data, model
     ph, fl = x_fold_b[np.argsort(x_fold_b)], true_flux_b[np.argsort(x_fold_b)]
