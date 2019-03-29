@@ -1,6 +1,7 @@
 import numpy as np
 import lightkurve as lk
 import os
+import warnings
 
 from numpy import ma
 
@@ -83,7 +84,7 @@ def _estimate_background(tpf):
     flux = np.copy(tpf.flux)
     thumb = np.nanpercentile(flux, 95, axis=0)
     thumb[thumb > 1e3] = np.nan
-    mask = thumb > np.nanpercentile(thumb, 5)
+    mask = np.nan_to_num(thumb) > np.nanpercentile(thumb, 5)
     mask |= ~np.isfinite(thumb)
 
     # Make sure to throw away nans
@@ -180,9 +181,35 @@ def movie(dat, phase, flux, title='', out='out.mp4', scale='linear', cbar_label=
     anim = animation.FuncAnimation(fig, animate, frames=len(data), interval=30)
     anim.save(out, dpi=150)
 
-def plot_crobat(x_fold_b, resids, secondary_mask, aper, **kwargs):
+def plot_diagnostic(x_fold_b, resids, secondary_mask, folded_lightcurve, tpf,  aper=None, **kwargs):
     ''' Plot a nice crobat plot
     '''
+    fig = plt.figure(figsize=(14, 9))
+
+    ax = plt.subplot2grid((3, 4), (0, 0), colspan=3, rowspan=2, fig=fig)
+    folded_lightcurve.scatter(ax=ax, label='Period: {}d\nt0:      {}'.format(np.round(folded_lightcurve.meta['period'], 6),
+                                                                        np.round(folded_lightcurve.meta['t0'], 6)))
+    ax.set_xlabel('')
+    ax.set_title(kwargs.pop('name', ''))
+
+    ax = plt.subplot2grid((3, 4), (0, 3), fig=fig, rowspan=1)
+    im = ax.imshow(np.log10(np.nanmedian(tpf.flux, axis=0)), cmap='viridis', vmin=0, vmax=4)
+
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="5%", pad=0.05)
+    cbar = plt.colorbar(im, cax=cax)
+    cbar.ax.tick_params(labelsize=10)
+    cbar.set_label('log$_{10]}$ Flux', fontsize=7)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_title('Flux')
+
+    ax = plt.subplot2grid((3, 4), (1, 3), fig=fig, rowspan=1)
+    labels = ['Mission', 'Sector', 'Camera', 'CCD', 'Row', 'Column', "RA", "Dec"]
+    ax.axis('off')
+    ax.table(cellText=np.atleast_2d(np.asarray([getattr(tpf, l.lower()) for l in labels])).T,
+                    rowLabels=np.asarray(labels), colLabels=np.asarray(['Parameters']), colWidths=np.asarray([0.75]), loc='center')
+
     secondary_depth_resid = np.median(resids[secondary_mask], axis=0)
 
     vmin = np.min([0, np.nanmin(secondary_depth_resid[aper])])
@@ -197,12 +224,11 @@ def plot_crobat(x_fold_b, resids, secondary_mask, aper, **kwargs):
     ticks = np.append(np.round(np.arange(vmin, 0, dt), 3)[:-1], np.round(np.arange(0, vmax, dt), 3))
     ticks = np.unique(ticks)
 
-    fig = plt.figure(figsize=(14, 3))
-    ax = plt.subplot2grid((1, 4), (0, 0), colspan=3, fig=fig)
-    ax.set_title('Residuals as a Function of Time')
+    ax = plt.subplot2grid((3, 4), (2, 0), colspan=3, fig=fig)
+#    ax.set_title('Residuals as a Function of Time', fontsize=10)
     for idx, l, n in zip(range(aper.sum()), deepcopy(resids[:, aper].T), secondary_depth_resid[aper]):
         if idx == 0:
-            ax.plot(x_fold_b, l, color=cmap(norm(n)), zorder=n, label=kwargs.pop('name', ''))
+            ax.plot(x_fold_b, l, color=cmap(norm(n)), zorder=n, label='Residuals')
         else:
             ax.plot(x_fold_b, l, color=cmap(norm(n)), zorder=n)
         #ax.plot(x_fold_b, (true_flux_b) * corr - corr + 1, color='k', zorder=n)
@@ -213,19 +239,23 @@ def plot_crobat(x_fold_b, resids, secondary_mask, aper, **kwargs):
     sm.set_array([])
 
     #cbar.set_label('Measured Secondary Depth/\nTrue Secondary Depth')
-    ax.set_ylabel('Pixel Light Curves')
+    ax.set_ylabel('Pixel Light Curve Residuals')
 #    ax.axvline(0, ls='--', color='k')
 
-    ax = plt.subplot2grid((1, 4), (0, 3), colspan=1, fig=fig)
-    im = ax.imshow(secondary_depth_resid/(aper), cmap=cmap, norm=norm)
+    ax = plt.subplot2grid((3, 4), (2, 3), colspan=1, fig=fig)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        im = ax.imshow(secondary_depth_resid/(aper), cmap=cmap, norm=norm)
 
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="5%", pad=0.05)
     cbar = plt.colorbar(im, cax=cax, ticks=ticks)
     cbar.ax.tick_params(labelsize=10)
+    cbar.set_label('Residual', fontsize=7)
+
 
     ax.set_xticks([])
     ax.set_yticks([])
-    ax.set_title('Residuals During Secondary Eclipse', fontsize=15)
+    ax.set_title('Residuals During Secondary Eclipse', fontsize=10)
 
     return fig
