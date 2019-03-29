@@ -24,15 +24,23 @@ log.setLevel('INFO')
 plt.style.use(lk.MPLSTYLE)
 
 def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
-    '''
+    '''Analyze a TESS EB, and diagnose the chromaticity.
+
+    Parameters
+    ----------
+
+    raw_tpf: lightkurve.TessTargetPixelFile
+        A TESS cut out TPF with an EB
+
+
     '''
 
     # Find saturated pixels
-    saturated = np.nanmax(raw_tpf.flux, axis=0) > 100000
+    saturated = np.nanpercentile(raw_tpf.flux, 95, axis=0) > 100000
     for idx, s in enumerate(saturated.T):
-        saturated[:, idx] = (convolve(s, Box1DKernel(5)) > 1e-5)
+        saturated[:, idx] = (convolve(s, Box1DKernel(3)) > 1e-5)
 
-    saturated |= np.nanmax(raw_tpf.flux, axis=0) > 50000
+    saturated |= np.nanpercentile(raw_tpf.flux, 95, axis=0) > 50000
     for idx, s in enumerate(saturated.T):
         saturated[:, idx] = (convolve(s, Box1DKernel(10)) > 1e-5)
 
