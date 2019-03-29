@@ -76,10 +76,11 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
 
     time = deepcopy(tpf.time)
     flux = deepcopy(tpf.flux)
-    flux_err = deepcopy(tpf.flux)
+    flux_err = deepcopy(tpf.flux_err)
     true_flux = deepcopy(true.flux)
 
     data = np.zeros(flux.shape)
+    errors = np.zeros(flux.shape)
     model = np.zeros(flux.shape)
 
     primary_depth = np.zeros(flux.shape[1:])
@@ -98,6 +99,7 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
             # Detrend long term
             l1 /= poly_detrend(l1, eb_model).flux
             l1 = l1.normalize()
+
             primary_depth[idx, jdx] = np.nanmedian(l1.flux[np.abs(x_fold) < 0.02])
             primary_depth_err[idx, jdx] = np.nanstd(l1.flux[np.abs(x_fold) < 0.02])
 
@@ -108,6 +110,7 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
 #            model_flux[:, idx, jdx] = true_flux/((1/d) - (1/d) + 1)
 
             data[:, idx, jdx] = l1.flux
+            errors[:, idx, jdx] = l1.flux_err
 
             p = 1 - np.nanmedian(l1.flux[np.abs(x_fold) < 0.02])
             tp = 1 - np.nanmedian(true_flux[np.abs(x_fold) < 0.02])
@@ -125,7 +128,7 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
 
 
 
-    aper &= np.log10(score) < -30
+    aper &= np.log10(score) < -300
 
     data_b = np.asarray([np.median(data[ind, :, :], axis=0) for ind in inds])
     model_b = np.asarray([np.median(model[ind, :, :], axis=0) for ind in inds])
@@ -137,7 +140,7 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100):
     log.info('Plotting Crobat')
     plot_crobat(x_fold_b, resids, secondary_mask=np.abs(x_fold_b) > 0.48, aper=aper & ~saturated, name=name)
 
-    return data, model
+    return data, errors, model, corr, aper & ~saturated
     ph, fl = x_fold_b[np.argsort(x_fold_b)], true_flux_b[np.argsort(x_fold_b)]
 
     log.info('\tBuilding Normalized Flux Animation')
