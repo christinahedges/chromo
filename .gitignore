@@ -9,3 +9,4 @@ __pycache__
 chromo/__pycache__
 notebooks/.ipynb_checkpoints/
 *.pyc
+notebooks/*.png

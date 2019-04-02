@@ -23,7 +23,7 @@ log.setLevel('INFO')
 
 plt.style.use(lk.MPLSTYLE)
 
-def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100, build_movie=False, output_dir='.'):
+def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100, build_movie=False, output_dir='', score_threshold=-30, saturation_aggression=5):
     '''Analyze a TESS EB, and diagnose the chromaticity.
 
     Parameters
@@ -46,6 +46,10 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100, build_movie=F
         Whether to build movies of the results. This will take longer.
     output_dir : string
         Where to output the resulting figures
+    score_threshold: int
+        TEMPORARY. A value to tune the aperture size. Set to a more negative number to get a larger aperture...
+    saturation_aggression : int
+        TEMPORARY. How tall a saturation column is. Set to higher values to remove more saturation.
 
     Returns
     -------
@@ -62,9 +66,9 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100, build_movie=F
     '''
 
     # Find saturated pixels
-    saturated = np.nanpercentile(raw_tpf.flux, 95, axis=0) > 100000
+    saturated = np.nanpercentile(raw_tpf.flux, 90, axis=0) > 40000
     for idx, s in enumerate(saturated.T):
-        saturated[:, idx] = (convolve(s, Box1DKernel(3)) > 1e-5)
+        saturated[:, idx] = (convolve(s, Box1DKernel(saturation_aggression)) > 1e-5)
 
     # Default aperture is all pixels
     if aper is None:
@@ -157,7 +161,8 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100, build_movie=F
     # If you want to use a larger aperture, change this score
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
-        aper &= np.log10(score) < -100
+        if np.any(aper & (np.log10(score) < score_threshold)):
+            aper &= np.log10(score) < score_threshold
 
     # Phase and bin the data and model arrays
     data_binned = np.asarray([np.median(data[ind, :, :], axis=0) for ind in inds])
@@ -175,6 +180,7 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100, build_movie=F
     fig = plot_diagnostic(phase_binned, resids, np.abs(phase_binned) > 0.48, folded_lightcurve, tpf,
                             aper=aper & ~saturated, name=name)
 
+    fig.savefig('{}{}_{}.png'.format(output_dir, name.replace(' ', ''), 'sector{}'.format(tpf.sector)), dpi=200, bbox_inches='tight')
     # If the user wants movies
     if build_movie:
 
@@ -185,7 +191,7 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100, build_movie=F
         log.info('\tBuilding Normalized Flux Animation')
         # Find the colour min/max for the colour bar
         fmin, fmax = np.nanpercentile(model_binned[:, aper & ~saturated], 1), np.nanmax([1, np.nanpercentile(model_binned[:, aper & ~saturated], 1)])
-        movie(data_binned, ph, fl, cmap='viridis', vmin=fmin, vmax=fmax, out='{}{}_{}.mp4'.format(dir, name.replace(' ', ''), 'sector{}'.format(tpf.sector)),
+        movie(data_binned, ph, fl, cmap='viridis', vmin=fmin, vmax=fmax, out='{}{}_{}.mp4'.format(output_dir, name.replace(' ', ''), 'sector{}'.format(tpf.sector)),
                            title='Normalized Data', cbar_label='Normalized Flux')
 
 
@@ -203,7 +209,7 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100, build_movie=F
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
             movie(resids/np.atleast_3d(aper).transpose([2, 0, 1]), ph, fl,
-                               cmap=cmap, norm=norm, vmin=vmin, vmax=vmax, out='{}{}_{}_resids.mp4'.format(dir, name.replace(' ', ''), 'sector{}'.format(tpf.sector)),
+                               cmap=cmap, norm=norm, vmin=vmin, vmax=vmax, out='{}{}_{}_resids.mp4'.format(output_dir, name.replace(' ', ''), 'sector{}'.format(tpf.sector)),
                                title='Residuals', cbar_label='Resiudal')
 
     # Return the results as a dictionary

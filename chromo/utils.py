@@ -16,6 +16,8 @@ from astropy.stats import sigma_clipped_stats, sigma_clip
 from astropy.io import fits
 
 class MidPointNorm(Normalize):
+    ''' Create a colour map that can have a mid point that's not in the middle
+    '''
     def __init__(self, midpoint=0, vmin=None, vmax=None, clip=False):
         Normalize.__init__(self,vmin, vmax, clip)
         self.midpoint = midpoint
@@ -80,6 +82,8 @@ class MidPointNorm(Normalize):
 
 
 def _estimate_background(tpf):
+    ''' Estimate the background of a TPF
+    '''
     # Correct background
     flux = np.copy(tpf.flux)
     thumb = np.nanpercentile(flux, 95, axis=0)
@@ -193,7 +197,7 @@ def plot_diagnostic(x_fold_b, resids, secondary_mask, folded_lightcurve, tpf,  a
     ax.set_title(kwargs.pop('name', ''))
 
     ax = plt.subplot2grid((3, 4), (0, 3), fig=fig, rowspan=1)
-    im = ax.imshow(np.log10(np.nanmedian(tpf.flux, axis=0)), cmap='viridis', vmin=0, vmax=4)
+    im = ax.imshow(np.log10(np.nanmedian(tpf.flux, axis=0)), cmap='viridis', vmin=1, vmax=4)
 
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="5%", pad=0.05)
