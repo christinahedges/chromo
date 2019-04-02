@@ -236,7 +236,7 @@ def movie(dat, phase, flux, title='', out='out.mp4', scale='linear', cbar_label=
 
 
 
-def plot_diagnostic(phase_folded_binned, resids, secondary_mask, folded_lightcurve, tpf,  aper=None, name=''):
+def plot_diagnostic(phase_folded_binned, resids, secondary_mask, folded_lightcurve, tpf,  aper=None, name='', **kwargs):
     ''' Plot a diagnostic for an EB
 
     Parameters
@@ -255,6 +255,8 @@ def plot_diagnostic(phase_folded_binned, resids, secondary_mask, folded_lightcur
         Optional aperture to use when plotting.
     name : str
         Optional name for plot
+    **kwargs : dict
+        Kwargs for plotting
 
     Returns
     -------
