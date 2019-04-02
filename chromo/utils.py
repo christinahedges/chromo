@@ -1,3 +1,4 @@
+''' Basic utilities for plotting chromo stuff and calculating backgrounds '''
 import numpy as np
 import lightkurve as lk
 import os
@@ -83,6 +84,16 @@ class MidPointNorm(Normalize):
 
 def _estimate_background(tpf):
     ''' Estimate the background of a TPF
+
+    Parameters
+    ----------
+    tpf : lk.TessTargetPixelFile
+        Input TPF
+
+    Returns
+    -------
+    med : np.ndarray
+        Estimated background
     '''
     # Correct background
     flux = np.copy(tpf.flux)
@@ -100,6 +111,18 @@ def _estimate_background(tpf):
     return med
 
 def background_correct(raw_tpf):
+    ''' Correct the background in a TPF
+
+    Parameters
+    ----------
+    raw_tpf : lk.TessTargetPixelFile
+        Input TPF
+
+    Returns
+    -------
+    tpf : lk.TessTargetPixelFile
+        TPF with background removed
+    '''
     bkg = _estimate_background(raw_tpf)
     hdu = deepcopy(raw_tpf.hdu)
     hdu[1].data['FLUX'][raw_tpf.quality_mask] -= np.atleast_3d(bkg).transpose([1, 2, 0])
@@ -111,6 +134,18 @@ def background_correct(raw_tpf):
 
 def poly_detrend(lc, eb_model, npoly=3, sigma=3):
     ''' Detrend a light curve with a simple third order polynomial
+
+    Parameters
+    ----------
+    lc : lk.LightCurve
+        Input light curve to correct
+    eb_model : np.ndarray
+        A model for the EB to remove, prior to fitting a polynomial.
+
+    Returns
+    -------
+    corr : lk.LightCurve
+        A lk.LightCurve containing the trend to remove.
     '''
     clc = lc.copy()
     clc /= eb_model
@@ -131,7 +166,26 @@ def poly_detrend(lc, eb_model, npoly=3, sigma=3):
 
 
 def movie(dat, phase, flux, title='', out='out.mp4', scale='linear', cbar_label='', **kwargs):
-    '''Create an mp4 movie of a 3D array
+    '''Create an mp4 movie of the detector and a folded light curve
+
+    Paramters
+    ---------
+    dat : np.ndarray
+        3D data cube to make a movie of
+    phase : np.ndarray
+        Phase of the EB
+    flux : np.ndarray
+        Folded light curve of EB
+    title : str
+        Title for the movie
+    out : str
+        Output file name
+    scale : 'linear' or 'log'
+        Z scale for the movie
+    cbar_label : str
+        Optional colorbar label
+    **kwargs : dict
+        Keywords for plotting each image
     '''
     if scale == 'log':
         data = np.log10(np.copy(dat))
@@ -164,11 +218,6 @@ def movie(dat, phase, flux, title='', out='out.mp4', scale='linear', cbar_label=
     vmin = kwargs.pop('vmin', np.nanpercentile(data, 5))
     vmax = kwargs.pop('vmax', np.nanpercentile(data, 95))
 
-
-#    ticks = np.append(np.round(np.linspace(vmin, 0, 4), 3)[:-1], np.round(np.linspace(0, vmax, 4), 3))
-#    dt = (vmax - vmin)/8
-#    ticks = np.append(np.round(np.arange(vmin, 0, dt), 3)[:-1], np.round(np.arange(0, vmax, dt), 3))
-#    cbar = plt.colorbar(im1, cax=cax, ticks=ticks)
     cbar = plt.colorbar(im1, cax=cax)
     cbar.ax.tick_params(labelsize=10)
     cbar.set_label(cbar_label)
@@ -185,8 +234,32 @@ def movie(dat, phase, flux, title='', out='out.mp4', scale='linear', cbar_label=
     anim = animation.FuncAnimation(fig, animate, frames=len(data), interval=30)
     anim.save(out, dpi=150)
 
-def plot_diagnostic(x_fold_b, resids, secondary_mask, folded_lightcurve, tpf,  aper=None, **kwargs):
-    ''' Plot a nice crobat plot
+
+
+def plot_diagnostic(phase_folded_binned, resids, secondary_mask, folded_lightcurve, tpf,  aper=None, name=''):
+    ''' Plot a diagnostic for an EB
+
+    Parameters
+    ----------
+    phase_folded_binned : np.ndarray
+        Phase of the EB, folded and binned
+    resids : np.ndarray
+        Residual of the best fitting EB flux to each pixel
+    secondary_mask : boolean array
+        Where the secondary eclipses occur. Should be True during secondary eclipses
+    folded_lightcurve: np.ndarray
+        Folded 'white light' curve
+    tpf : lk.TargetPixelFile
+        TPF to plot.
+    aper : boolean array
+        Optional aperture to use when plotting.
+    name : str
+        Optional name for plot
+
+    Returns
+    -------
+    fig : matplotlib.pyplot.figure
+        Figure containing diagnostic plots.
     '''
     fig = plt.figure(figsize=(14, 9))
 
@@ -194,7 +267,7 @@ def plot_diagnostic(x_fold_b, resids, secondary_mask, folded_lightcurve, tpf,  a
     folded_lightcurve.scatter(ax=ax, label='Period: {}d\nt0:      {}'.format(np.round(folded_lightcurve.meta['period'], 6),
                                                                         np.round(folded_lightcurve.meta['t0'], 6)))
     ax.set_xlabel('')
-    ax.set_title(kwargs.pop('name', ''))
+    ax.set_title(name)
 
     ax = plt.subplot2grid((3, 4), (0, 3), fig=fig, rowspan=1)
     im = ax.imshow(np.log10(np.nanmedian(tpf.flux, axis=0)), cmap='viridis', vmin=1, vmax=4)
@@ -232,10 +305,10 @@ def plot_diagnostic(x_fold_b, resids, secondary_mask, folded_lightcurve, tpf,  a
 #    ax.set_title('Residuals as a Function of Time', fontsize=10)
     for idx, l, n in zip(range(aper.sum()), deepcopy(resids[:, aper].T), secondary_depth_resid[aper]):
         if idx == 0:
-            ax.plot(x_fold_b, l, color=cmap(norm(n)), zorder=n, label='Residuals')
+            ax.plot(phase_folded_binned, l, color=cmap(norm(n)), zorder=n, label='Residuals')
         else:
-            ax.plot(x_fold_b, l, color=cmap(norm(n)), zorder=n)
-        #ax.plot(x_fold_b, (true_flux_b) * corr - corr + 1, color='k', zorder=n)
+            ax.plot(phase_folded_binned, l, color=cmap(norm(n)), zorder=n)
+        #ax.plot(phase_folded_binned, (true_flux_b) * corr - corr + 1, color='k', zorder=n)
     ax.set_xlabel('Phase')
     ax.legend()
     #Horrible Colorbar
