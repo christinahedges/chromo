@@ -187,16 +187,19 @@ class Model(object):
             params = params[:2]
 
         log.info('Fitting')
+#        print(self.best_guess)
         result = minimize(self._likelihood, list(self.initial_guess.values()), method='TNC', bounds=list(self.bounds.values()), args=(lc, x_fold, x_fold_2, k))
         self._minimize_result = result
         bg = {}
         for idx, l in enumerate(labels):
-            if fix_orbital & (idx > 1):
-                if l in self.best_guess:
-                    bg[l] = self.best_guess[l]
+            if fix_orbital:
+                if (idx <= 1):
+                    bg[l] = result.x[idx]
                 else:
-                    break
-            bg[l] = result.x[idx]
+                    bg[l] = np.copy(self.best_guess[l])
+            else:
+                bg[l] = result.x[idx]
+
         self.best_guess = bg
 
     def plot(self, lc, ax=None):
