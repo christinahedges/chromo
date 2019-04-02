@@ -33,5 +33,5 @@ Check out some demos of the chromaticity in the TESS PRF below
   <img src="docs/figures/XZPup_sector7.png" width="800"/>
 </p>
 <p align="center">
-  <img src="docs/figures/AEPhe_sector2.png" width="800"/>
+  <img src="docs/figures/EEAqr_sector2.png" width="800"/>
 </p>
