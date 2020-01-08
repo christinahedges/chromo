@@ -98,7 +98,7 @@ def _estimate_background(tpf):
     # Correct background
     flux = np.copy(tpf.flux)
     thumb = np.nanpercentile(flux, 95, axis=0)
-    thumb[thumb > 1e3] = np.nan
+    thumb[thumb > 1e4] = np.nan
     mask = np.nan_to_num(thumb) > np.nanpercentile(thumb, 5)
     mask |= ~np.isfinite(thumb)
 
@@ -284,7 +284,13 @@ def plot_diagnostic(phase_folded_binned, resids, secondary_mask, folded_lightcur
     ax.set_title('Flux')
 
     ax = plt.subplot2grid((3, 4), (1, 3), fig=fig, rowspan=1)
-    labels = ['Mission', 'Sector', 'Camera', 'CCD', 'Row', 'Column', "RA", "Dec"]
+    if tpf.mission.lower() == 'tess':
+        labels = ['Mission', 'Sector', 'Camera', 'CCD', 'Row', 'Column', "RA", "Dec"]
+    if tpf.mission.lower() == 'kepler':
+        labels = ['Mission', 'Quarter', 'Module', 'Channel', 'Row', 'Column', "RA", "Dec"]
+    if tpf.mission.lower() == 'k2':
+        labels = ['Mission', 'Campaign', 'Module', 'Channel', 'Row', 'Column', "RA", "Dec"]
+
     ax.axis('off')
     ax.table(cellText=np.atleast_2d(np.asarray([getattr(tpf, l.lower()) for l in labels])).T,
                     rowLabels=np.asarray(labels), colLabels=np.asarray(['Parameters']), colWidths=np.asarray([0.75]), loc='center')
@@ -300,6 +306,9 @@ def plot_diagnostic(phase_folded_binned, resids, secondary_mask, folded_lightcur
                         vmax=vmax)
     cmap.set_bad('lightgrey', 1)
     dt = (vmax - vmin)/8
+    if dt == 0:
+        dt = 0.001
+        vmin -= 0.002
     ticks = np.append(np.round(np.arange(vmin, 0, dt), 3)[:-1], np.round(np.arange(0, vmax, dt), 3))
     ticks = np.unique(ticks)
 

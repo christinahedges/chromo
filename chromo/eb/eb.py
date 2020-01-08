@@ -76,7 +76,10 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100, build_movie=F
 
 
     # Background correct the raw TPF, see utils
-    tpf = background_correct(raw_tpf)
+    if isinstance(raw_tpf, lk.targetpixelfile.TessTargetPixelFile):
+        tpf = background_correct(raw_tpf)
+    else:
+        tpf = raw_tpf
 
     # Create the light curve from ALL pixels in the aperture
     # This is the best estimate of the TESS light curve
@@ -127,6 +130,9 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100, build_movie=F
     # For every pixel
     for jdx in tqdm(range(flux.shape[2]), desc='Calculating Pixel Light Curves'):
         for idx in range(flux.shape[1]):
+            if (~np.isfinite(flux[:, idx, jdx])).all():
+                continue
+
             # BUILD a lk object
             l1 = lk.LightCurve(time, flux[:, idx, jdx], flux_err=flux_err[:, idx, jdx])
 
@@ -180,7 +186,13 @@ def analyze(raw_tpf, period, t0, name='target', aper=None, nb=100, build_movie=F
     fig = plot_diagnostic(phase_binned, resids, np.abs(phase_binned) > 0.48, folded_lightcurve, tpf,
                             aper=aper & ~saturated, name=name)
 
-    fig.savefig('{}{}_{}.png'.format(output_dir, name.replace(' ', ''), 'sector{}'.format(tpf.sector)), dpi=200, bbox_inches='tight')
+    if tpf.mission.lower() == 'tess':
+        fig.savefig('{}{}_{}.png'.format(output_dir, name.replace(' ', ''), 'sector{}'.format(tpf.sector)), dpi=200, bbox_inches='tight')
+    if tpf.mission.lower() == 'kepler':
+        fig.savefig('{}{}_{}.png'.format(output_dir, name.replace(' ', ''), 'quarter{}'.format(tpf.quarter)), dpi=200, bbox_inches='tight')
+    if tpf.mission.lower() == 'k2':
+        fig.savefig('{}{}_{}.png'.format(output_dir, name.replace(' ', ''), 'campaign{}'.format(tpf.campaign)), dpi=200, bbox_inches='tight')
+
     # If the user wants movies
     if build_movie:
 
