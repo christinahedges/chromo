@@ -10,3 +10,4 @@ chromo/__pycache__
 notebooks/.ipynb_checkpoints/
 *.pyc
 notebooks/*.png
+dev-notebooks/starry
